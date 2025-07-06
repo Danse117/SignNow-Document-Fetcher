@@ -119,8 +119,7 @@ func getDocumentsInTimeFrame(startDate, endDate string) error {
 		return errors.New("*** Error reading response ***: " + err.Error())
 	}
 
-	// Parse JSON response using the Document struct to filter out
-	// sections of the body that are not needed
+	// Parse JSON response using the Document struct to filter out unneeded sections
 	var documents []Document
 	if err := json.Unmarshal(body, &documents); err != nil {
 		return errors.New("*** Error parsing JSON ***: " + err.Error())
@@ -134,7 +133,7 @@ func getDocumentsInTimeFrame(startDate, endDate string) error {
 
 	// Upload JSON fields to S3
 	s3Key := fmt.Sprintf("signed_documents_%s_to_%s.json", startDate, endDate)
-	bucketName := os.Getenv("S3_BUCKET_NAME") // Set this in Lambda environment vars
+	bucketName := os.Getenv("S3_BUCKET_NAME")
 
 	err = uploadToS3(bucketName, s3Key, completeJSON)
 	if err != nil {
