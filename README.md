@@ -1,6 +1,7 @@
 # Getting and Storing Signed Documents with SignNow API
 
 **Goal**: Use Sign-Now API endpoint to retreive all documents fields and store the JSON of the document in an AWS S3 Bucket
+While Adam’s primary focus was developing the core backend logic via GoLang and AWS Lambda, I focused on understanding how this new tool would fit into the broader UFT framework and making sure it meets the needs of real UFT staffers experience. Throughout this project I learned how cloud-based automation and API integration can transform tedious daily tasks into efficient and dependable solutions. During this time, using websites such as ServiceNow, TryHackMe, and GitHub helped contribute to my learning and understanding for this project as well as projects to come. Aside from the original goal of using Sign-Now API endpoint to retrieve all documents fields and store the JSON of the documents collected in AWS, ultimately this project represents a collaborative step toward increasing efficiency, reducing response time, and improving how the UFT handles large volumes of digital form data from its members.
 
 ### Approach One (AP1/)
 * Sign-Now API Endpoint to retreive all documents within a specified time frame. Run the Go binary in AWS Lambda and store in AWS S3
