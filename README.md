@@ -1,6 +1,7 @@
 # Getting and Storing Signed Documents with SignNow API
 
 **Goal**: Use Sign-Now API endpoint to retreive all documents fields and store the JSON of the document in an AWS S3 Bucket
+
 While Adam’s primary focus was developing the core backend logic via GoLang and AWS Lambda, I (Khari) focused on understanding how this new tool would fit into the broader UFT framework and making sure it meets the needs of real UFT staffers experience. Throughout this project I learned how cloud-based automation and API integration can transform tedious daily tasks into efficient and dependable solutions. During this time, using websites such as ServiceNow, TryHackMe, and GitHub helped contribute to my learning and understanding for this project as well as projects to come. Aside from the original goal of using Sign-Now API endpoint to retrieve all documents fields and store the JSON of the documents collected in AWS, ultimately this project represents a collaborative step toward increasing efficiency, reducing response time, and improving how the UFT handles large volumes of digital form data from its members.
 
 ### Approach One (AP1/)
@@ -9,13 +10,61 @@ While Adam’s primary focus was developing the core backend logic via GoLang an
 
 ### Approach Two (createDocumentCompleteWebhook & getParseAndSaveDocument)
   1. Event (**user.document.create**) webhook for Admin is created to track when Admin sends a new document to be signed. When admin creates document, Webhook sends payload to callback, AWS API Gateway URL which contains the document_ID.
+```
+// Used initally to assign webhook to Admin to listen to the event when a document is sent to be signed
+curl --request POST \
+  --url https://api.signnow.com/api/v2/events \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Bearer {{access_token}}' \
+  --header 'Content-Type: application/json' \
+  --data '{
+  "event": "user.document.create",
+  "entity_id": "document_id",
+  "action": "callback",
+  "attributes": {
+    "callback": "AWS_CALLBACK_URL",
+    "use_tls_12": true,
+    "integration_id": "Unique ID Integration System",
+    "docid_queryparam": true,
+    "delay": 50,
+    "retry_count": 3
+  }
+}'
+```
    
   2. document_ID goes to AWS Lambda function (**createDocumentWebhook**) which uses the document_ID to create a new event (**document.complete**) webhook. After the document is signed the from the webhook payload sends the document_ID and the Webhook subscription_ID to another AWS Lambda Function (**getParseAndSaveDocument**)
    
+
   3. **getParseAndSaveDocument** has four important steps:
      1. Get the document from SignNow using the SignNow API (https://docs.signnow.com/docs/signnow/document/operations/get-a-document) as a JSON
      2. Parse the returned JSON and omit extra fields and only keep fields which are important such as: Date created/signed, signed user email, signed user inputs(text fields, checkboxes, radio fields, and base64 encoded signature)
      3. After the JSON is collected and cutdown, the JSON is then sent to AWS S3 Storage bucket for safe keeping. Each document is formated as follows signed-{firstName}-{lastName}-{date}.json
      4. Another webhook event is called using the subscription_ID mentioned previously to delete the Webhook that was used to send the document.complete. This is done to prevent too many webhooks from being created, as they do not delete on their own
 
-   <img src="SN-API-Wireframe.png" alt="Description" style="border: 2px solid #000000; width: 700px; border-radius: 8px;" />
+
+<center>
+   <img src="SN-API-Wireframe.png" alt="Description" style="border: 2px solid #000000; width: 700px; border-radius: 8px;"/>
+</center>
+
+### Cost of the services?
+- **SignNow**: UFTWF has the enterprise plan ($30 per user per month)
+- **AWS Lambda**: 
+  - Architecture: ARM (Cheaper/More cost effiecent)
+  - Memory Allocated: 128 MB ($0.0000000017 per millisecond)
+  - createDocumentCompleteWebhook: duration 353 ms
+  - getParseAndSaveDocument: duration 1348 ms
+  - 0.0000028917 USD per-request, $1.50 per ~500,000 requests
+
+- **API Gateway (REST API)**:
+
+| Number of requests (per month)    | Price (per milion) |
+| -------- | ------- |
+| First 333 million  |$3.50|
+| Next 667 million |$2.80|
+| Next 19 billion    |$2.38|
+| Over 20 billion|$1.51|
+
+- **S3 (Storing JSON's)**
+  - $0.023 per GB
+  - Each JSON is ~93kb in size
+  - 485,235 JSON's stored per $1
