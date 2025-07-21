@@ -47,35 +47,64 @@ type LambdaResponse struct {
 }
 
 // Structs for the full JSON response from the SignNow API
+
+// Temporary struct for parsing the original JSON that includes Fields
+type DocumentWithFields struct {
+	DocumentID      string        `json:"id"`
+	UserID          string        `json:"user_id"`
+	OwnerID         string        `json:"owner"`
+	OwnerName       string        `json:"owner_name"`
+	DocumentName    string        `json:"document_name"`
+	VersionTime     string        `json:"version_time"`
+	Created         string        `json:"created"`
+	Updated         string        `json:"updated"`
+	Signatures      []Signature   `json:"signatures"`
+	Fields          []Field       `json:"fields"`
+	Texts           []Text        `json:"texts"`
+	RadioButtons    []RadioButton `json:"radiobuttons"`
+	Checks          []Check       `json:"checks"`
+	Seals           []Seal        `json:"seals"`
+	SignerFirstName string        `json:"signer_first_name"`
+	SignerLastName  string        `json:"signer_last_name"`
+}
+
 type Document struct {
-	DocumentID      string      `json:"document_id"`
-	UserID          string      `json:"user_id"`
-	DocumentName    string      `json:"document_name"`
-	Created         string      `json:"created"`
-	Updated         string      `json:"updated"`
-	Signatures      []Signature `json:"signatures"`
-	Fields          []Field     `json:"fields"`
-	Texts           []Text      `json:"texts"`
-	SignerFirstName string      `json:"signer_first_name"`
-	SignerLastName  string      `json:"signer_last_name"`
+	DocumentID      string        `json:"id"`
+	UserID          string        `json:"user_id"`
+	OwnerID         string        `json:"owner"`
+	OwnerName       string        `json:"owner_name"`
+	DocumentName    string        `json:"document_name"`
+	VersionTime     string        `json:"version_time"`
+	Created         string        `json:"created"`
+	Updated         string        `json:"updated"`
+	Signatures      []Signature   `json:"signatures"`
+	Texts           []Text        `json:"texts"`
+	RadioButtons    []RadioButton `json:"radiobuttons"`
+	Checks          []Check       `json:"checks"`
+	Seals           []Seal        `json:"seals"`
+	SignerFirstName string        `json:"signer_first_name"`
+	SignerLastName  string        `json:"signer_last_name"`
 }
 
 type Signature struct {
-	Id        string `json:"id"`
-	UserId    string `json:"user_id"`
-	Email     string `json:"email"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Data      string `json:"data"`
+	Id         string `json:"id"`
+	UserId     string `json:"user_id"`
+	Email      string `json:"email"`
+	Data       string `json:"data"`
+	Subtype    string `json:"subtype"`
+	FieldName  string `json:"field_name,omitempty"`
+	FieldLabel string `json:"field_label,omitempty"`
 }
 
 type Field struct {
-	Id         string `json:"id"`
-	Type       string `json:"type"`
-	RoleId     string `json:"role_id"`
-	Originator string `json:"originator"`
-	Fulfiller  string `json:"fulfiller"`
-	Value      string `json:"value"`
+	Id             string                 `json:"id"`
+	Type           string                 `json:"type"`
+	RoleId         string                 `json:"role_id"`
+	Originator     string                 `json:"originator"`
+	Fulfiller      string                 `json:"fulfiller"`
+	JSONAttributes map[string]interface{} `json:"json_attributes"`
+	FieldID        string                 `json:"field_id"`
+	ElementID      string                 `json:"element_id"`
 }
 
 type Text struct {
@@ -86,6 +115,48 @@ type Text struct {
 	Size       string `json:"size"`
 	Data       string `json:"data"`
 	Created    string `json:"created"`
+	Name       string `json:"name"`
+	Label      string `json:"label"`
+}
+
+type RadioButtonOption struct {
+	RadioID string `json:"radio_id"`
+	Created string `json:"created"`
+	Checked string `json:"checked"`
+	Value   string `json:"value"`
+}
+
+type RadioButton struct {
+	Id                     string              `json:"id"`
+	UserId                 string              `json:"user_id"`
+	Name                   string              `json:"name"`
+	Status                 string              `json:"status"`
+	ServerCreatedTimestamp string              `json:"server_created_timestamp"`
+	PageNumber             string              `json:"page_number"`
+	Radio                  []RadioButtonOption `json:"radio"`
+	FieldName              string              `json:"field_name,omitempty"`
+	FieldLabel             string              `json:"field_label,omitempty"`
+}
+
+type Check struct {
+	Id         string `json:"id"`
+	UserId     string `json:"user_id"`
+	PageNumber string `json:"page_number"`
+	Email      string `json:"email"`
+	Created    string `json:"created"`
+	FieldName  string `json:"field_name,omitempty"`
+	FieldLabel string `json:"field_label,omitempty"`
+}
+
+type Seal struct {
+	Id             string                 `json:"id"`
+	Type           string                 `json:"type"`
+	RoleId         string                 `json:"role_id"`
+	Originator     string                 `json:"originator"`
+	Fulfiller      string                 `json:"fulfiller"`
+	JSONAttributes map[string]interface{} `json:"json_attributes"`
+	FieldID        string                 `json:"field_id"`
+	ElementID      string                 `json:"element_id"`
 }
 
 // handleRequest is the main Lambda function handler that processes document parsing requests
@@ -193,7 +264,7 @@ func processDocumentRequest(requestPayload map[string]interface{}) (LambdaRespon
 	}
 
 	// Parse the document details to get the specific fields
-	parsedDocument := parseDocumentDetails(documentDetails)
+	parsedDocument := documentDetails
 
 	// Save the document to S3
 	s3URL, err := saveDocumentToS3(parsedDocument, documentID)
@@ -251,7 +322,11 @@ func main() {
 	} else {
 		log.Println("Running locally - testing with hardcoded document ID")
 		documentID := "c8ad674ee71b4c0388ebb9eb6af58a1faa561128"
-		getDocumentDetails(documentID)
+		_, err := getDocumentDetails(documentID)
+		if err != nil {
+			log.Printf("Error getting document details: %v", err)
+			return
+		}
 	}
 }
 
@@ -289,38 +364,131 @@ func getDocumentDetails(documentID string) (*Document, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", res.StatusCode, string(body))
 	}
 
-	// Parse JSON response
-	var document Document
-	err = json.Unmarshal(body, &document)
+	// Parse JSON response with fields included
+	var documentWithFields DocumentWithFields
+	err = json.Unmarshal(body, &documentWithFields)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing JSON response: %v", err)
 	}
 
-	return &document, nil
+	// Convert to final Document struct and enhance texts, radiobuttons, checks, and signatures with name/label from fields
+	document := &Document{
+		DocumentID:      documentWithFields.DocumentID,
+		UserID:          documentWithFields.UserID,
+		OwnerID:         documentWithFields.OwnerID,
+		OwnerName:       documentWithFields.OwnerName,
+		DocumentName:    documentWithFields.DocumentName,
+		VersionTime:     documentWithFields.VersionTime,
+		Created:         documentWithFields.Created,
+		Updated:         documentWithFields.Updated,
+		Signatures:      signaturesWithFieldData(documentWithFields.Signatures, documentWithFields.Fields),
+		Texts:           textsWithFieldData(documentWithFields.Texts, documentWithFields.Fields),
+		RadioButtons:    radioButtonsWithFieldData(documentWithFields.RadioButtons, documentWithFields.Fields),
+		Checks:          checksWithFieldData(documentWithFields.Checks, documentWithFields.Fields),
+		Seals:           documentWithFields.Seals,
+		SignerFirstName: documentWithFields.SignerFirstName,
+		SignerLastName:  documentWithFields.SignerLastName,
+	}
+
+	return document, nil
 }
 
-func parseDocumentDetails(documentDetails *Document) *Document {
-	// Extract first and last name from the first signature
-	var firstName, lastName string
-	if len(documentDetails.Signatures) > 0 {
-		firstName = documentDetails.Signatures[0].FirstName
-		lastName = documentDetails.Signatures[0].LastName
+/*
+The following functions are needed as per the response, the individual fields
+do not include the name and label fields. They must be extracted from the fields
+array and appeneded to the individual fields.
+*/
+func textsWithFieldData(texts []Text, fields []Field) []Text {
+	// Create a map of field element_id to field for quick lookup
+	fieldMap := make(map[string]*Field)
+	for i := range fields {
+		fieldMap[fields[i].ElementID] = &fields[i]
 	}
 
-	parsedDocument := &Document{
-		DocumentID:      documentDetails.DocumentID,
-		UserID:          documentDetails.UserID,
-		DocumentName:    documentDetails.DocumentName,
-		Created:         documentDetails.Created,
-		Updated:         documentDetails.Updated,
-		Signatures:      documentDetails.Signatures,
-		Fields:          documentDetails.Fields,
-		Texts:           documentDetails.Texts,
-		SignerFirstName: firstName,
-		SignerLastName:  lastName,
+	enhancedTexts := make([]Text, len(texts))
+	for i, text := range texts {
+		enhancedTexts[i] = text
+
+		if field, exists := fieldMap[text.Id]; exists {
+			if name, ok := field.JSONAttributes["name"].(string); ok {
+				enhancedTexts[i].Name = name
+			}
+			if label, ok := field.JSONAttributes["label"].(string); ok {
+				enhancedTexts[i].Label = label
+			}
+		}
 	}
 
-	return parsedDocument
+	return enhancedTexts
+}
+
+func radioButtonsWithFieldData(radiobuttons []RadioButton, fields []Field) []RadioButton {
+	// Create a map of field element_id to field for quick lookup
+	fieldMap := make(map[string]*Field)
+	for i := range fields {
+		fieldMap[fields[i].ElementID] = &fields[i]
+	}
+
+	enhancedRadioButtons := make([]RadioButton, len(radiobuttons))
+	for i, radiobutton := range radiobuttons {
+		enhancedRadioButtons[i] = radiobutton
+
+		if field, exists := fieldMap[radiobutton.Id]; exists {
+			if name, ok := field.JSONAttributes["name"].(string); ok {
+				enhancedRadioButtons[i].FieldName = name
+			}
+			if label, ok := field.JSONAttributes["label"].(string); ok {
+				enhancedRadioButtons[i].FieldLabel = label
+			}
+		}
+	}
+
+	return enhancedRadioButtons
+}
+
+func checksWithFieldData(checks []Check, fields []Field) []Check {
+	fieldMap := make(map[string]*Field)
+	for i := range fields {
+		fieldMap[fields[i].ElementID] = &fields[i]
+	}
+
+	enhancedChecks := make([]Check, len(checks))
+	for i, check := range checks {
+		enhancedChecks[i] = check
+
+		if field, exists := fieldMap[check.Id]; exists {
+			if name, ok := field.JSONAttributes["name"].(string); ok {
+				enhancedChecks[i].FieldName = name
+			}
+			if label, ok := field.JSONAttributes["label"].(string); ok {
+				enhancedChecks[i].FieldLabel = label
+			}
+		}
+	}
+
+	return enhancedChecks
+}
+func signaturesWithFieldData(signatures []Signature, fields []Field) []Signature {
+	fieldMap := make(map[string]*Field)
+	for i := range fields {
+		fieldMap[fields[i].ElementID] = &fields[i]
+	}
+
+	enhancedSignatures := make([]Signature, len(signatures))
+	for i, signature := range signatures {
+		enhancedSignatures[i] = signature
+
+		if field, exists := fieldMap[signature.Id]; exists {
+			if name, ok := field.JSONAttributes["name"].(string); ok {
+				enhancedSignatures[i].FieldName = name
+			}
+			if label, ok := field.JSONAttributes["label"].(string); ok {
+				enhancedSignatures[i].FieldLabel = label
+			}
+		}
+	}
+
+	return enhancedSignatures
 }
 
 // saveDocumentToS3 saves the parsed document to AWS S3
